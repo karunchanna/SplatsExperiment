@@ -181,6 +181,7 @@ export function SplatViewer({ splatUrl, remotePlayers, onMove }: SplatViewerProp
     }
 
     const splat = new SplatMesh({ url: splatUrl });
+    splat.rotation.x = Math.PI; // Flip 180° — splat data uses Y-down convention
     splatMeshRef.current = splat;
     scene.add(splat);
 
