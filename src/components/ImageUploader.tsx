@@ -75,7 +75,7 @@ export function ImageUploader({ apiKey, onSplatGenerated }: ImageUploaderProps) 
         setStatusText(status);
       });
 
-      const splatUrl = getSplatUrl(result, "500k");
+      const splatUrl = getSplatUrl(result, "full_res");
       if (!splatUrl) {
         setStage("error");
         setStatusText("World generated but no splat URL found. You may need a paid plan for splat exports.");

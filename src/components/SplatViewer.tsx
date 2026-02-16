@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import * as THREE from "three";
-import { SplatMesh } from "@sparkjsdev/spark";
+import { SplatMesh, SparkRenderer } from "@sparkjsdev/spark";
 import type { RemotePlayer } from "../hooks/useWebSocket";
 
 interface SplatViewerProps {
@@ -77,6 +77,7 @@ class FirstPersonControls {
 export function SplatViewer({ splatUrl, remotePlayers, onMove }: SplatViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sparkRef = useRef<SparkRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<FirstPersonControls | null>(null);
@@ -106,11 +107,18 @@ export function SplatViewer({ splatUrl, remotePlayers, onMove }: SplatViewerProp
     camera.position.set(0, 0.5, 2);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    // antialias: false is recommended by SparkJS — WebGL AA doesn't help
+    // Gaussian splats and hurts performance
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+
+    // SparkRenderer handles the Gaussian splat rendering pipeline
+    const spark = new SparkRenderer({ renderer });
+    scene.add(spark);
+    sparkRef.current = spark;
 
     const controls = new FirstPersonControls(camera, renderer.domElement);
     controlsRef.current = controls;
@@ -149,6 +157,8 @@ export function SplatViewer({ splatUrl, remotePlayers, onMove }: SplatViewerProp
       cancelAnimationFrame(animFrameRef.current);
       window.removeEventListener("resize", handleResize);
       controls.dispose();
+      scene.remove(spark);
+      sparkRef.current = null;
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
