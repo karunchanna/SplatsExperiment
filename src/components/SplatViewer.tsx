@@ -112,18 +112,6 @@ export function SplatViewer({ splatUrl, remotePlayers, onMove }: SplatViewerProp
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Ambient light
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
-    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional.position.set(5, 10, 5);
-    scene.add(directional);
-
-    // Ground grid for reference
-    const grid = new THREE.GridHelper(20, 20, 0x333366, 0x222244);
-    grid.position.y = -0.5;
-    scene.add(grid);
-
     const controls = new FirstPersonControls(camera, renderer.domElement);
     controlsRef.current = controls;
 
