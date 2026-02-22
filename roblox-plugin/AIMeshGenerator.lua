@@ -350,7 +350,8 @@ sectionHeader("③ Generate Mesh", scroll, 30)
 
 local genBtn    = button("▶  Generate Mesh", C.accent, scroll, 31, 34)
 local genStatus = statusLabel(scroll, 32)
-genStatus.Size  = UDim2.new(1, 0, 0, 30)
+genStatus.Size        = UDim2.new(1, 0, 0, 42)
+genStatus.TextWrapped = true
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- ❹  VIEWPORT PREVIEW
@@ -365,8 +366,6 @@ vp.LayoutOrder      = 41
 vp.Parent           = scroll
 corner(vp, 6)
 
--- Add ambient lighting inside the viewport
-local vpAmbient = Instance.new("AmbientLight")  -- fallback; actual lighting is done per-source
 -- WorldModel holds the preview geometry
 local vpWorld = Instance.new("WorldModel")
 vpWorld.Parent = vp
@@ -383,10 +382,10 @@ vpLight.Range      = 200
 
 local function updateCamera()
     if not previewModel then return end
-    local cf      = previewModel:GetModelCFrame()
-    local extents = previewModel:GetExtentsSize()
-    local maxDim  = math.max(extents.X, extents.Y, extents.Z)
-    local dist    = camDist + maxDim * 1.2
+    -- GetBoundingBox() replaced deprecated GetModelCFrame()
+    local cf, size = previewModel:GetBoundingBox()
+    local maxDim   = math.max(size.X, size.Y, size.Z)
+    local dist     = camDist + maxDim * 1.2
 
     local offset = Vector3.new(
         math.sin(modelRotY) * math.cos(modelRotX),
@@ -415,9 +414,9 @@ local function loadPreview(model)
 
     previewModel = clone
 
-    -- Auto-fit camera
-    local extents = clone:GetExtentsSize()
-    camDist = math.max(extents.X, extents.Y, extents.Z) * 1.0
+    -- Auto-fit camera using GetBoundingBox (returns CFrame, Vector3)
+    local _, bbSize = clone:GetBoundingBox()
+    camDist = math.max(bbSize.X, bbSize.Y, bbSize.Z) * 1.0
     modelRotX, modelRotY = -0.25, 0.6
     updateCamera()
 end
@@ -508,27 +507,34 @@ genBtn.MouseButton1Click:Connect(function()
     genStatus.TextColor3     = C.amber
 
     task.spawn(function()
+        -- Step 1: generate the model
         local ok, result = pcall(function()
-            local params = { Description = prompt }
-
-            -- Pass bounding-box dimensions as a size hint if available
-            if boundingBoxPart then
-                params.DimensionX = boundingBoxPart.Size.X
-                params.DimensionY = boundingBoxPart.Size.Y
-                params.DimensionZ = boundingBoxPart.Size.Z
-            end
-
-            return AssetService:GenerateModelAsync(prompt, params)
+            -- GenerateModelAsync only accepts an optional { seed: number } table.
+            -- DimensionX/Y/Z and Description are NOT valid option keys – they would
+            -- cause the call to error. The prompt itself is the first argument.
+            return AssetService:GenerateModelAsync(prompt, {})
         end)
 
-        if ok and result then
-            generatedModel = result
-            loadPreview(result)
-            genStatus.Text       = "✔  Mesh generated!  Drag the preview to rotate."
-            genStatus.TextColor3 = C.green
-        else
-            genStatus.Text       = "✖  Error: " .. tostring(result)
+        if not ok then
+            genStatus.Text       = "✖  Generate error: " .. tostring(result)
             genStatus.TextColor3 = C.red
+            genBtn.Active           = true
+            genBtn.BackgroundColor3 = C.accent
+            genBtn.Text             = "▶  Generate Mesh"
+            return
+        end
+
+        generatedModel = result
+        genStatus.Text       = "✔  Mesh generated!  Loading preview…"
+        genStatus.TextColor3 = C.green
+
+        -- Step 2: load into viewport (separate pcall so a preview crash
+        --         doesn't hide the success or re-lock the button)
+        local pvOk, pvErr = pcall(loadPreview, result)
+        if pvOk then
+            genStatus.Text = "✔  Mesh generated!  Drag the preview to rotate."
+        else
+            genStatus.Text = "✔  Mesh generated  (preview error: " .. tostring(pvErr) .. ")"
         end
 
         genBtn.Active           = true
@@ -579,8 +585,8 @@ texBtn.MouseButton1Click:Connect(function()
 
     task.spawn(function()
         local ok, err = pcall(function()
-            -- GenerateTextureAsync applies PBR textures directly to the MeshPart
-            AssetService:GenerateTextureAsync(targetMesh, { Description = desc })
+            -- The options table key is lowercase "prompt", not "Description"
+            AssetService:GenerateTextureAsync(targetMesh, { prompt = desc })
         end)
 
         if ok then
@@ -667,14 +673,17 @@ applyTriBtn.Size   = UDim2.new(1, -150, 1, 0)
 
 local triStatus = statusLabel(scroll, 66)
 
--- Count triangles via EditableMesh (Studio only, beta API)
+-- Count triangles via EditableMesh (Studio only, requires mesh to be a Roblox asset)
+-- Falls back gracefully when unavailable.
 local function getTriangleCount(meshPart)
     local ok, result = pcall(function()
-        local em = AssetService:CreateEditableMeshAsync(
-            Content.fromUri(meshPart.MeshId), {}
-        )
+        -- Content.fromUri wraps a rbxassetid:// URI
+        local content = Content.fromUri(meshPart.MeshId)
+        local em = AssetService:CreateEditableMeshAsync(content)
         if em then
-            return #em:GetTriangles()
+            -- GetFaces() returns a list of face IDs; each face is one triangle
+            local faces = em:GetFaces()
+            return faces and #faces or nil
         end
         return nil
     end)
